@@ -1,0 +1,27 @@
+# gwx configuration for this repository, meant to be committed.
+# Settings that are yours rather than the project's — where you like your
+# worktrees, above all — go in the same format in ~/.config/gwx/config.toml,
+# and the two combine per key.
+# Docs: docs/configuration.md
+version = "1"
+
+# Turn on the pre-commit checks (cargo fmt / clippy / test). The hook is in the
+# repository, but git does not look at .githooks until core.hooksPath says so,
+# and a hook nobody enabled is a red CI run nobody saw coming.
+#
+# core.hooksPath lives in the shared config file rather than per worktree, so
+# from the second worktree on this only writes the same value again.
+[[hooks.post_create]]
+type = "command"
+command = "git config core.hooksPath .githooks"
+
+# Download the dependencies the lockfile names, so the first commit in a new
+# worktree is not the one that discovers it needs the network: the pre-commit
+# hook runs clippy and the tests, and both build the whole dependency tree.
+#
+# The download cache is shared between worktrees (~/.cargo), so this is close
+# to instant once one worktree has done it. Compilation itself is not shared —
+# target/ belongs to the worktree, and that is the point of having one.
+[[hooks.post_create]]
+type = "command"
+command = "cargo fetch --locked"
