@@ -808,6 +808,11 @@ fn a_hook_does_not_inherit_a_pointer_to_another_repository() {
         .current_dir(&fx.repo)
         .env("GIT_DIR", elsewhere.join(".git"))
         .env("GIT_WORK_TREE", &elsewhere)
+        // This one builds its own command to plant the stray `GIT_DIR`, so it
+        // has to repeat what `gwx_in` does: without it a real config in the
+        // developer's home decides where the worktree lands, and the test
+        // looks for it somewhere else. It passes in CI, where there is none.
+        .env("XDG_CONFIG_HOME", fx.root.join("config"))
         .args(["add", "feature/hooked"])
         .output()
         .expect("failed to run gwx");
