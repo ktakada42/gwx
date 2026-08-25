@@ -22,7 +22,8 @@ you are looking at — `1 of 4` once you start typing, so filtering everything
 away reads as `0 of 4` rather than an unexplained blank screen.
 
 Each row says what you need before acting on it: `dirty` for uncommitted
-changes, `merged` when the branch is already in the main worktree's `HEAD`.
+changes, `merged` when the branch is already in the main worktree's `HEAD`,
+`broken` when the checkout has lost the `.git` that ties it to the repository.
 The `STATUS` column fills in a moment after the list appears — working it out
 costs a `git status` per worktree, which the list does not wait for.
 The path is not shown — gwx derives it from the branch name, so it only

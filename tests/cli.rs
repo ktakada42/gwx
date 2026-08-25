@@ -890,6 +890,30 @@ fn remove_protects_dirty_worktrees_and_the_main_one() {
 }
 
 #[test]
+fn remove_deletes_a_worktree_whose_checkout_is_broken() {
+    let fx = Fixture::new();
+    let path = PathBuf::from(fx.gwx_ok(["add", "broken"]));
+    // What a stray `rm -rf` leaves behind: the directory is still there, git
+    // calls the worktree prunable, and `git worktree remove` turns it down
+    // however many times it is forced.
+    std::fs::remove_file(path.join(".git")).unwrap();
+
+    let out = fx.gwx(["remove", "broken"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("checkout is broken"));
+    assert!(path.exists());
+
+    let out = fx.gwx(["remove", "broken", "--force"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!path.exists());
+    assert!(!git_out(&fx.repo, ["worktree", "list"]).contains("broken"));
+}
+
+#[test]
 fn remove_keeps_unmerged_branches() {
     let fx = Fixture::new();
     let path = PathBuf::from(fx.gwx_ok(["add", "unmerged"]));

@@ -774,6 +774,9 @@ fn flags(wt: &Worktree) -> Vec<&'static str> {
     if wt.locked {
         notes.push("locked");
     }
+    if wt.prunable {
+        notes.push("broken");
+    }
     notes
 }
 
@@ -1373,6 +1376,7 @@ mod tests {
                 bare: false,
                 detached: false,
                 locked: false,
+                prunable: false,
             },
         }
     }
@@ -1873,6 +1877,7 @@ mod tests {
             bare: false,
             detached: branch.is_none(),
             locked: false,
+            prunable: false,
         }
     }
 
