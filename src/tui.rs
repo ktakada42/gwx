@@ -79,8 +79,11 @@ struct Item {
     name: String,
     path: PathBuf,
     head: String,
-    /// Empty until [`StatusFeed`] reports back.
-    note: String,
+    /// `None` until [`StatusFeed`] reports back.
+    ///
+    /// Empty and unknown are different answers, and the column has to be able
+    /// to say which one it is showing.
+    note: Option<String>,
     is_current: bool,
     is_main: bool,
     worktree: Worktree,
@@ -615,7 +618,7 @@ fn key_action(key: &KeyEvent) -> Action {
 
 /// Builds the rows without asking git anything slow.
 ///
-/// The status column is left empty here and filled in by [`StatusFeed`]: it
+/// The status column is left unknown here and filled in by [`StatusFeed`]: it
 /// costs a `git status` per worktree, which is fast in a small repository and
 /// seconds across ten of them. The list has to be on screen before that.
 fn load(repo: &Repo) -> Result<Vec<Item>> {
@@ -629,7 +632,7 @@ fn load(repo: &Repo) -> Result<Vec<Item>> {
         .map(|wt| Item {
             name: repo.display_name(&wt, &main),
             head: wt.short_head(),
-            note: String::new(),
+            note: None,
             is_main: wt.path == main.path,
             is_current: repo.cwd.starts_with(&wt.path),
             path: wt.path.clone(),
@@ -708,7 +711,7 @@ impl StatusFeed {
             Ok(notes) => {
                 for (index, note) in notes {
                     if let Some(item) = items.get_mut(index) {
-                        item.note = note;
+                        item.note = Some(note);
                     }
                 }
                 self.rx = None;
@@ -892,6 +895,13 @@ fn fit(line: &str, width: usize) -> String {
 
 const PLACEHOLDER: &str = "type to filter";
 
+/// Stands in for a status that has not been worked out yet.
+///
+/// An empty column is an answer of its own — nothing about this worktree is
+/// worth saying — so the wait needs a mark, or a row still being measured and
+/// a row with nothing to report look exactly alike and neither can be read.
+const PENDING: &str = "...";
+
 /// Column labels. `HEAD` keeps git's own name for the short commit id.
 const NAME_HEADER: &str = "WORKTREE";
 const HEAD_HEADER: &str = "HEAD   ";
@@ -1011,7 +1021,9 @@ fn draw(
         let marker = if item.is_current { "*" } else { " " };
         let line = format!(
             "{marker} {:<name_width$}  {}  {}",
-            item.name, item.head, item.note
+            item.name,
+            item.head,
+            item.note.as_deref().unwrap_or(PENDING)
         );
         let line = fit(&line, cols);
         queue!(out, cursor::MoveTo(0, row as u16 + 1))?;
@@ -1363,7 +1375,7 @@ mod tests {
             name: name.to_string(),
             path: PathBuf::from(path),
             head: "abc1234".to_string(),
-            note: String::new(),
+            note: None,
             is_current: false,
             is_main: false,
             worktree: Worktree {
@@ -1463,7 +1475,7 @@ mod tests {
 
     #[test]
     fn the_column_headers_are_ascii() {
-        for header in [NAME_HEADER, HEAD_HEADER, STATUS_HEADER] {
+        for header in [NAME_HEADER, HEAD_HEADER, STATUS_HEADER, PENDING] {
             assert!(header.is_ascii(), "{header}");
         }
     }
@@ -1473,7 +1485,7 @@ mod tests {
         // The list is drawn before git is asked anything slow, so the status
         // column starts empty and fills in later.
         let p = picker();
-        assert!(p.items.iter().all(|i| i.note.is_empty()));
+        assert!(p.items.iter().all(|i| i.note.is_none()));
     }
 
     #[test]
@@ -1719,7 +1731,7 @@ mod tests {
     fn the_frame_puts_the_header_over_the_rows_it_labels() {
         let mut p = picker();
         p.items[0].is_current = true;
-        p.items[1].note = "dirty, merged".to_string();
+        p.items[1].note = Some("dirty, merged".to_string());
         let frame = frame_of(|out| draw(out, &mut p, None, WIDE));
 
         assert!(frame.row(0).starts_with("  WORKTREE"), "{:?}", frame.row(0));
@@ -1733,6 +1745,24 @@ mod tests {
         assert!(frame.row(4).contains("hotfix"));
         // The marker column says where you are standing; only one row can.
         assert!(!frame.row(2).starts_with('*'), "{:?}", frame.row(2));
+    }
+
+    #[test]
+    fn a_status_still_being_worked_out_says_so() {
+        let mut p = picker();
+        // What the first frame shows: nothing has come back from the feed yet.
+        let frame = frame_of(|out| draw(out, &mut p, None, WIDE));
+        assert!(frame.row(1).contains(PENDING), "{:?}", frame.row(1));
+
+        // And once it has: an answer of "nothing to report" leaves the column
+        // blank, which is what the placeholder was there to keep apart from
+        // the wait.
+        p.items[0].note = Some(String::new());
+        p.items[1].note = Some("dirty".to_string());
+        let frame = frame_of(|out| draw(out, &mut p, None, WIDE));
+        assert!(!frame.row(1).contains(PENDING), "{:?}", frame.row(1));
+        assert_eq!(frame.row(1).trim_end(), "  @                abc1234");
+        assert!(frame.row(2).contains("dirty"), "{:?}", frame.row(2));
     }
 
     #[test]
@@ -2195,7 +2225,7 @@ mod tests {
         // Seven characters of the real commit, not a placeholder.
         assert_eq!(items[0].head.len(), 7);
         // The status column is filled in later, off the drawing path.
-        assert!(items.iter().all(|i| i.note.is_empty()));
+        assert!(items.iter().all(|i| i.note.is_none()));
     }
 
     #[test]
@@ -2275,8 +2305,10 @@ mod tests {
         // Drained once and only once; a second call has nothing to redraw for.
         assert!(!feed.drain(&mut items));
 
-        assert_eq!(items[0].note, "");
-        assert_eq!(items[1].note, "merged");
+        // The main worktree is clean and nothing else is worth saying about
+        // it, which is an answer — not the absence of one.
+        assert_eq!(items[0].note.as_deref(), Some(""));
+        assert_eq!(items[1].note.as_deref(), Some("merged"));
     }
 
     #[test]
