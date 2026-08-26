@@ -808,6 +808,11 @@ fn a_hook_does_not_inherit_a_pointer_to_another_repository() {
         .current_dir(&fx.repo)
         .env("GIT_DIR", elsewhere.join(".git"))
         .env("GIT_WORK_TREE", &elsewhere)
+        // This one builds its own command to plant the stray `GIT_DIR`, so it
+        // has to repeat what `gwx_in` does: without it a real config in the
+        // developer's home decides where the worktree lands, and the test
+        // looks for it somewhere else. It passes in CI, where there is none.
+        .env("XDG_CONFIG_HOME", fx.root.join("config"))
         .args(["add", "feature/hooked"])
         .output()
         .expect("failed to run gwx");
@@ -882,6 +887,30 @@ fn remove_protects_dirty_worktrees_and_the_main_one() {
     let out = fx.gwx(["remove", "@"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("main worktree"));
+}
+
+#[test]
+fn remove_deletes_a_worktree_whose_checkout_is_broken() {
+    let fx = Fixture::new();
+    let path = PathBuf::from(fx.gwx_ok(["add", "broken"]));
+    // What a stray `rm -rf` leaves behind: the directory is still there, git
+    // calls the worktree prunable, and `git worktree remove` turns it down
+    // however many times it is forced.
+    std::fs::remove_file(path.join(".git")).unwrap();
+
+    let out = fx.gwx(["remove", "broken"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("checkout is broken"));
+    assert!(path.exists());
+
+    let out = fx.gwx(["remove", "broken", "--force"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!path.exists());
+    assert!(!git_out(&fx.repo, ["worktree", "list"]).contains("broken"));
 }
 
 #[test]

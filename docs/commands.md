@@ -92,6 +92,12 @@ when its work is in `HEAD` of the main worktree — either merged there, or
 the way out when a hook itself is what stands between you and a stale
 worktree.
 
+A worktree that has lost its `.git` — deleted by hand, or left behind by a
+move that did not finish — shows up as `broken`, and `git worktree remove`
+refuses it outright. `--force` is what removes one: gwx deletes the directory
+itself and lets git drop the record afterwards. It takes a `--force` because a
+broken checkout cannot be asked whether anything in it was left uncommitted.
+
 ## `gwx clean`
 
 ```

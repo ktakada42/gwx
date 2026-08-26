@@ -17,6 +17,11 @@ pub struct Worktree {
     pub bare: bool,
     pub detached: bool,
     pub locked: bool,
+    /// The checkout is broken: its `.git` is missing or points nowhere.
+    ///
+    /// git reports this on a worktree whose directory was deleted, or whose
+    /// `.git` file was, and it refuses to `remove` the second kind.
+    pub prunable: bool,
 }
 
 impl Worktree {
@@ -176,6 +181,7 @@ pub fn parse_worktree_list(porcelain: &str) -> Vec<Worktree> {
                     bare: false,
                     detached: false,
                     locked: false,
+                    prunable: false,
                 });
             }
             _ => {
@@ -193,6 +199,7 @@ pub fn parse_worktree_list(porcelain: &str) -> Vec<Worktree> {
                     "bare" => wt.bare = true,
                     "detached" => wt.detached = true,
                     "locked" => wt.locked = true,
+                    "prunable" => wt.prunable = true,
                     _ => {}
                 }
             }
@@ -473,6 +480,22 @@ fn parse_tracking(upstream: &str, track: &str) -> Tracking {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_broken_worktree_is_read_as_prunable() {
+        // The reason git gives after `prunable` is prose, and gwx only cares
+        // that the word was there at all.
+        let list = parse_worktree_list(
+            "\
+worktree /home/me/worktrees/broken
+HEAD 1111111111111111111111111111111111111111
+branch refs/heads/broken
+prunable gitdir file points to non-existent location
+",
+        );
+        assert_eq!(list.len(), 1);
+        assert!(list[0].prunable);
+    }
 
     #[test]
     fn tracking_tells_apart_never_pushed_and_level() {

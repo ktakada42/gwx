@@ -31,6 +31,15 @@ pub fn removal_blocker(repo: &Repo, worktree: &Worktree, force: bool) -> Option<
     if repo.cwd.starts_with(&worktree.path) {
         return Some("you are inside this worktree".to_string());
     }
+    // A broken checkout cannot be asked what it is holding: `git status`
+    // fails on it, so the dirty check below would wave through work that is
+    // about to be deleted along with the directory.
+    if !force && worktree.prunable {
+        return Some(
+            "its checkout is broken and gwx cannot tell whether it holds uncommitted work; pass --force to delete it anyway"
+                .to_string(),
+        );
+    }
     if !force && git::is_dirty(&worktree.path).unwrap_or(false) {
         return Some("it has uncommitted changes".to_string());
     }
@@ -68,6 +77,24 @@ pub fn remove_worktree(repo: &Repo, worktree: &Worktree, opts: RemoveOptions) ->
             &ctx,
             reporting,
         )?;
+    }
+
+    // git will not `remove` a worktree whose `.git` has gone missing, however
+    // many times `--force` is passed: validation runs before the flag is read
+    // and fails on the absent file. Deleting the directory ourselves leaves
+    // the one kind of breakage git does handle — no directory at all — and
+    // the command below then drops the administrative record as usual.
+    // `git worktree prune` would clear the record too, but it works on every
+    // prunable worktree in the repository, and only this one was asked for.
+    if worktree.prunable {
+        match std::fs::remove_dir_all(&worktree.path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("failed to delete {}", worktree.path.display()))
+            }
+        }
     }
 
     let mut git_args = vec!["worktree".to_string(), "remove".to_string()];

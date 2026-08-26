@@ -101,6 +101,9 @@ fn note(wt: &Worktree) -> String {
     if wt.locked {
         notes.push("locked");
     }
+    if wt.prunable {
+        notes.push("broken");
+    }
     if notes.is_empty() {
         String::new()
     } else {
@@ -150,6 +153,7 @@ mod tests {
             bare: false,
             detached: true,
             locked: true,
+            prunable: false,
         };
         assert_eq!(note(&wt), " (detached, locked)");
         wt.detached = false;
