@@ -25,7 +25,9 @@ Each row says what you need before acting on it: `dirty` for uncommitted
 changes, `merged` when the branch is already in the main worktree's `HEAD`,
 `broken` when the checkout has lost the `.git` that ties it to the repository.
 The `STATUS` column fills in a moment after the list appears — working it out
-costs a `git status` per worktree, which the list does not wait for.
+costs a `git status` per worktree, which the list does not wait for. Until the
+answer arrives the column shows `...`; a row that ends up blank has been
+measured and had nothing worth reporting.
 The path is not shown — gwx derives it from the branch name, so it only
 repeated what the first column already said.
 
