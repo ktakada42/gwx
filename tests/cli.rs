@@ -1016,7 +1016,21 @@ fn clean_sorts_worktrees_by_what_removing_them_would_cost() {
     let fx = Fixture::new();
 
     // Merged into HEAD and clean: the only state gwx would tick for you.
-    fx.gwx_ok(["add", "feature/merged"]);
+    let merged = PathBuf::from(fx.gwx_ok(["add", "feature/merged"]));
+    commit(&merged, "merged.txt", "done\n", "merged work");
+    git(
+        &fx.repo,
+        [
+            "merge",
+            "--no-ff",
+            "-m",
+            "merge feature/merged",
+            "feature/merged",
+        ],
+    );
+
+    // Freshly created branch with no commits: untracked at HEAD, not preselected.
+    fx.gwx_ok(["add", "feature/new"]);
 
     // Committed and pushed, but not merged — a branch under review.
     let pushed = PathBuf::from(fx.gwx_ok(["add", "feature/pushed"]));
@@ -1055,6 +1069,11 @@ fn clean_sorts_worktrees_by_what_removing_them_would_cost() {
     };
     // The verdict comes first, the state that produced it in brackets.
     assert!(row("feature/merged").contains("yes  "), "{table}");
+    assert!(row("feature/new").contains("yes (local)"), "{table}");
+    assert!(
+        row("feature/new").contains("new branch, no commits yet"),
+        "{table}"
+    );
     assert!(row("feature/pushed").contains("yes (pushed)"), "{table}");
     assert!(row("hotfix/local").contains("yes (local)"), "{table}");
     assert!(row("wip/refactor").contains("no (dirty)"), "{table}");
@@ -1069,6 +1088,7 @@ fn clean_sorts_worktrees_by_what_removing_them_would_cost() {
             .unwrap_or_else(|| panic!("no row for {name} in:\n{table}"))
             .to_string()
     };
+    assert!(row("feature/new").contains("no (local)"), "{table}");
     assert!(row("hotfix/local").contains("no (local)"), "{table}");
     assert!(row("feature/pushed").contains("yes (pushed)"), "{table}");
 

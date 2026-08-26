@@ -128,7 +128,7 @@ pub fn remove_worktree(repo: &Repo, worktree: &Worktree, opts: RemoveOptions) ->
         // Reaching for `-D` means gwx answers for the deletion, which is why
         // the check behind `Merged::Changes` is the one that never says yes to
         // work that was merged and then reverted.
-        let flag = if merged == Merged::Commits && !opts.force {
+        let flag = if (merged == Merged::Commits || merged == Merged::New) && !opts.force {
             "-d"
         } else {
             "-D"
