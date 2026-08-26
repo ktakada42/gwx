@@ -216,10 +216,13 @@ fn classify(dirty: bool, merged: Merged, track: Tracking) -> (State, String) {
     let finished = match merged {
         Merged::Commits => Some("merged into HEAD, nothing uncommitted"),
         Merged::Changes => Some("squash or rebase merged into HEAD, nothing uncommitted"),
-        Merged::No => None,
+        Merged::New | Merged::No => None,
     };
     if let Some(note) = finished {
         return (State::Done, note.to_string());
+    }
+    if merged == Merged::New {
+        return (State::Local, "new branch, no commits yet".to_string());
     }
     match track {
         Tracking::Pushed => (
@@ -294,7 +297,10 @@ mod tests {
 
     #[test]
     fn only_merged_and_clean_is_preselected() {
-        assert!(classify(false, Merged::Commits, Tracking::Untracked)
+        assert!(classify(false, Merged::Commits, Tracking::Pushed)
+            .0
+            .preselected());
+        assert!(!classify(false, Merged::New, Tracking::Untracked)
             .0
             .preselected());
         for track in [Tracking::Pushed, Tracking::Ahead(2), Tracking::Gone] {

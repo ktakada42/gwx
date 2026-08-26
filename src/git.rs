@@ -302,6 +302,8 @@ pub fn is_dirty(path: &Path) -> Result<bool> {
 /// What `HEAD` of the main worktree already holds of a branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Merged {
+    /// The branch is at `HEAD` with no commits of its own and has never been pushed.
+    New,
     /// Its commits are reachable from `HEAD`.
     Commits,
     /// Its commits are not, but its changes are. A squash or rebase merge
@@ -325,19 +327,38 @@ pub struct MergeState {
     /// `None` when `HEAD` has no tree to compare against, which is a
     /// repository without commits. Every branch is then `No`.
     head_tree: Option<String>,
+    head_commit: Option<String>,
+    tracking: BTreeMap<String, Tracking>,
+    branch_heads: BTreeMap<String, String>,
 }
 
 impl MergeState {
     pub fn read(main: &Path) -> Result<Self> {
+        let (tracking, branch_heads) = branch_refs(main).unwrap_or_default();
         Ok(Self {
             main: main.to_path_buf(),
-            ancestors: merged_branches(main)?,
+            ancestors: merged_branches(main).unwrap_or_default(),
             head_tree: output(main, ["rev-parse", "HEAD^{tree}"]).ok(),
+            head_commit: output(main, ["rev-parse", "HEAD"]).ok(),
+            tracking,
+            branch_heads,
         })
     }
 
     pub fn of(&self, branch: &str) -> Merged {
         if self.ancestors.iter().any(|b| b == branch) {
+            let is_untracked = self
+                .tracking
+                .get(branch)
+                .is_none_or(|t| *t == Tracking::Untracked);
+            let is_at_head = self
+                .branch_heads
+                .get(branch)
+                .zip(self.head_commit.as_ref())
+                .is_some_and(|(b, h)| b == h);
+            if is_untracked && is_at_head {
+                return Merged::New;
+            }
             return Merged::Commits;
         }
         if self.merging_would_change_nothing(branch) {
@@ -419,6 +440,35 @@ pub enum Tracking {
     Ahead(usize),
 }
 
+/// How every local branch stands against its upstream and its current tip commit.
+pub fn branch_refs(main: &Path) -> Result<(BTreeMap<String, Tracking>, BTreeMap<String, String>)> {
+    let out = output(
+        main,
+        [
+            "for-each-ref",
+            "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)\t%(objectname)",
+            "refs/heads/",
+        ],
+    )?;
+
+    let mut tracking_map = BTreeMap::new();
+    let mut heads_map = BTreeMap::new();
+    for line in out.lines() {
+        let mut fields = line.split('\t');
+        let (Some(branch), Some(upstream), Some(track), Some(objectname)) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        if branch.is_empty() {
+            continue;
+        }
+        tracking_map.insert(branch.to_string(), parse_tracking(upstream, track));
+        heads_map.insert(branch.to_string(), objectname.to_string());
+    }
+    Ok((tracking_map, heads_map))
+}
+
 /// How every local branch stands against its upstream.
 ///
 /// One call for the whole repository, and the ahead count comes free with it:
@@ -426,30 +476,7 @@ pub enum Tracking {
 /// for the upstream name alone, and a tenth of the merged-branch check the
 /// picker already makes.
 pub fn tracking(main: &Path) -> Result<BTreeMap<String, Tracking>> {
-    let out = output(
-        main,
-        [
-            "for-each-ref",
-            "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)",
-            "refs/heads/",
-        ],
-    )?;
-
-    let mut map = BTreeMap::new();
-    for line in out.lines() {
-        let mut fields = line.split('\t');
-        let (Some(branch), Some(upstream)) = (fields.next(), fields.next()) else {
-            continue;
-        };
-        if branch.is_empty() {
-            continue;
-        }
-        map.insert(
-            branch.to_string(),
-            parse_tracking(upstream, fields.next().unwrap_or_default()),
-        );
-    }
-    Ok(map)
+    branch_refs(main).map(|(tracking, _)| tracking)
 }
 
 /// Reads one row of `for-each-ref` output.

@@ -754,11 +754,15 @@ fn note(
     if !is_main {
         if let Some((branch, merges)) = branch.zip(merges) {
             // Squash-merged and plainly merged both read as "merged" here.
-            // The column is a hint about what a removal would cost, and the
-            // cost is the same; `gwx clean` is where the difference is spelt
-            // out.
-            if merges.of(branch) != git::Merged::No {
-                notes.push("merged".to_string());
+            // A brand-new branch with no commits of its own reads as "new".
+            match merges.of(branch) {
+                git::Merged::Commits | git::Merged::Changes => {
+                    notes.push("merged".to_string());
+                }
+                git::Merged::New => {
+                    notes.push("new".to_string());
+                }
+                git::Merged::No => {}
             }
         }
     }
@@ -2249,7 +2253,7 @@ mod tests {
         let fixture = Fixture::new(&["feature/auth"]);
         let merges = git::MergeState::read(&fixture.main).unwrap();
 
-        // A branch off main with no commits of its own is already merged.
+        // A branch off main with no commits of its own is new.
         assert_eq!(
             note(
                 &fixture.worktree("feature/auth"),
@@ -2258,7 +2262,7 @@ mod tests {
                 false,
                 &[]
             ),
-            "merged"
+            "new"
         );
         // Uncommitted work leads, since it is the only thing a removal loses.
         std::fs::write(fixture.worktree("feature/auth").join("wip.txt"), "wip\n").unwrap();
@@ -2270,7 +2274,7 @@ mod tests {
                 false,
                 &["locked"]
             ),
-            "dirty, merged, locked"
+            "dirty, new, locked"
         );
         // The main worktree's branch is merged into itself, which says nothing.
         assert_eq!(
@@ -2313,7 +2317,7 @@ mod tests {
         // The main worktree is clean and nothing else is worth saying about
         // it, which is an answer — not the absence of one.
         assert_eq!(items[0].note.as_deref(), Some(""));
-        assert_eq!(items[1].note.as_deref(), Some("merged"));
+        assert_eq!(items[1].note.as_deref(), Some("new"));
     }
 
     #[test]
