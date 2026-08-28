@@ -25,12 +25,12 @@ the hooks in `.gwx.toml` bring the `.env` and the dependencies along.
 worktree, <kbd>Ctrl</kbd>+<kbd>d</kbd> to remove it. `--plain` prints the table
 instead, for reading or piping.
 
-![gwx list opens a table of four worktrees with their HEAD and status, typing bil filters it to feature/billing, and Enter changes the shell into that worktree](https://raw.githubusercontent.com/ktakada42/gwx/main/docs/demo/list.gif)
+![gwx list opens a table of five worktrees with their HEAD and status, typing bil filters it to feature/billing, and Enter changes the shell into that worktree](https://raw.githubusercontent.com/ktakada42/gwx/main/docs/demo/list.gif)
 
 **`gwx remove <name>`** — the worktree, and with `--with-branch` the branch it
 was for, as long as it is merged.
 
-![gwx list --plain shows four worktrees, gwx remove feature/billing --with-branch removes the worktree and deletes the branch, and the next listing is down to three](https://raw.githubusercontent.com/ktakada42/gwx/main/docs/demo/remove.gif)
+![gwx list --plain shows five worktrees, gwx remove feature/billing --with-branch removes the worktree and deletes the branch, and the next listing is down to four](https://raw.githubusercontent.com/ktakada42/gwx/main/docs/demo/remove.gif)
 
 > [!NOTE]
 > `gwx` is inspired by [satococoa/wtp](https://github.com/satococoa/wtp), a Go

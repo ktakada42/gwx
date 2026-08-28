@@ -6,7 +6,7 @@ Source common.tape
 Output remove.gif
 
 # Fits the two listings and the removal in between, with nothing left over.
-Set Height 500
+Set Height 580
 
 Hide
 Type "source /demo/env.sh" Enter
