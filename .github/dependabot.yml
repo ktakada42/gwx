@@ -1,4 +1,8 @@
 version: 2
+
+# The three repositories that run Dependabot share one window, Saturday 09:00
+# JST, so a week's bumps arrive together and get reviewed in one sitting
+# rather than trickling in on whatever day each repository was created.
 updates:
   # gwx ships prebuilt binaries, so a dependency left behind is shipped to
   # everyone who installs it.
@@ -6,6 +10,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: saturday
+      time: "09:00"
+      timezone: Asia/Tokyo
     open-pull-requests-limit: 5
     groups:
       # One pull request for the routine bumps; anything breaking still
@@ -15,10 +22,16 @@ updates:
           - minor
           - patch
 
+  # Weekly rather than monthly: monthly ignores `day` and fires on the first
+  # of the month, which cannot be lined up with the window above. The grouping
+  # keeps it to one pull request either way.
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
+      day: saturday
+      time: "09:00"
+      timezone: Asia/Tokyo
     groups:
       actions:
         patterns:
