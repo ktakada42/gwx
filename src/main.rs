@@ -36,6 +36,7 @@ fn run() -> anyhow::Result<()> {
         Command::Remove(args) => commands::remove::run(args),
         Command::Clean(args) => commands::clean::run(args),
         Command::Init(args) => commands::init::run(args),
+        Command::Alias(args) => commands::alias::run(args),
         Command::ShellInit(args) => commands::shell::shell_init(args),
         Command::Completion(args) => commands::shell::completion(args),
         Command::Man(args) => commands::man::run(args),

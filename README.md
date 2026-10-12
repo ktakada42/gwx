@@ -53,6 +53,9 @@ was for, as long as it is merged.
 - **List and navigate.** `gwx list` opens an interactive list — move, filter,
   press <kbd>Enter</kbd> to go there or <kbd>Ctrl</kbd>+<kbd>d</kbd> to delete.
   `gwx cd <name>` jumps straight to one, with tab completion.
+- **Worktree aliases.** Assign short, memorable nicknames to worktrees
+  (`gwx alias`, `gwx add -a <alias>`) to keep listings readable and simplify
+  commands when dealing with long branch names.
 ## Installation
 
 ### Homebrew (macOS / Linux)
@@ -143,6 +146,7 @@ you: `cd "$(gwx cd feature/auth)"`.
 | Command | What it does |
 | --- | --- |
 | `gwx add <branch>` | Create a worktree for `<branch>`, creating the branch if needed |
+| `gwx alias [<target>] [<alias>]` | Manage worktree aliases (`--unset` to remove) |
 | `gwx list` (`ls`) | Pick a worktree interactively; `--plain` or `--paths` for text |
 | `gwx cd [<name>]` | Move into a worktree; with no argument, to the main one |
 | `gwx remove <name>` (`rm`) | Remove a worktree, optionally with its branch |
@@ -151,9 +155,10 @@ you: `cd "$(gwx cd feature/auth)"`.
 | `gwx shell-init <shell>` | Print the `cd` function and the completion hookup |
 | `gwx completion <shell>` | Print the completion hookup only |
 
-`<name>` is matched against branch names first, then paths below `base_dir`,
-then directory names — so `gwx cd feature/auth` and `gwx cd auth` both work
-when they are unambiguous. Every command has a man page (`man gwx-add`).
+`<name>` is matched against configured aliases first, then branch names,
+then paths below `base_dir`, then directory names — so `gwx cd feature/auth`
+and `gwx cd auth` both work when they are unambiguous. Every command has a
+man page (`man gwx-add`).
 
 ## Documentation
 

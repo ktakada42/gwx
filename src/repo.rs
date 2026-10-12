@@ -1,5 +1,6 @@
 //! Repository discovery and worktree name resolution.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -38,11 +39,25 @@ impl Repo {
         Ok(self.base_dir()?.join(branch))
     }
 
-    /// Label shown in `gwx list`: path relative to the base dir when it lives
-    /// there, otherwise something still recognizable.
+    /// All gwx aliases configured for this repository.
+    pub fn aliases(&self) -> Result<BTreeMap<String, String>> {
+        git::aliases(&self.main)
+    }
+
+    /// Label shown in `gwx list`: alias when configured, otherwise path relative to
+    /// the base dir when it lives there, otherwise something still recognizable.
     pub fn display_name(&self, wt: &Worktree, main: &Worktree) -> String {
         if wt.path == main.path {
             return MAIN_ALIAS.to_string();
+        }
+        if let Some(branch) = &wt.branch {
+            if let Ok(aliases) = self.aliases() {
+                for (alias, target_branch) in aliases {
+                    if &target_branch == branch {
+                        return alias;
+                    }
+                }
+            }
         }
         wt.name()
     }
@@ -50,8 +65,8 @@ impl Repo {
     /// Finds the worktree a user-supplied name refers to.
     ///
     /// `None` and `@` mean the main worktree. Otherwise the name is matched
-    /// against branch names first, then against paths below the base dir, then
-    /// against directory names.
+    /// against aliases first, then branch names, then paths below the base dir,
+    /// then directory names.
     pub fn resolve(&self, name: Option<&str>) -> Result<Worktree> {
         let worktrees = self.worktrees()?;
         let Some(main) = worktrees.first().cloned() else {
@@ -62,6 +77,16 @@ impl Repo {
             None | Some(MAIN_ALIAS) => return Ok(main),
             Some(name) => name.trim_end_matches('/'),
         };
+
+        let aliases = self.aliases().unwrap_or_default();
+        if let Some(target_branch) = aliases.get(name) {
+            if let Some(wt) = worktrees
+                .iter()
+                .find(|w| w.branch.as_deref() == Some(target_branch))
+            {
+                return Ok(wt.clone());
+            }
+        }
 
         let base = self.base_dir()?;
         let mut by_branch = Vec::new();

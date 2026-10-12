@@ -149,8 +149,9 @@ impl Picker {
 
     /// Indices of the items matching the filter.
     ///
-    /// Matching is a case-insensitive substring test over the name and the
-    /// path, which is what makes typing a fragment of a branch name work.
+    /// Matching is a case-insensitive substring test over the name, the
+    /// path, and the original branch name, which is what makes typing a
+    /// fragment of a branch name or alias work.
     fn matches(&self) -> Vec<usize> {
         if self.filter.is_empty() {
             return (0..self.items.len()).collect();
@@ -162,6 +163,11 @@ impl Picker {
             .filter(|(_, item)| {
                 item.name.to_lowercase().contains(&needle)
                     || item.path.to_string_lossy().to_lowercase().contains(&needle)
+                    || item
+                        .worktree
+                        .branch
+                        .as_deref()
+                        .is_some_and(|b| b.to_lowercase().contains(&needle))
             })
             .map(|(i, _)| i)
             .collect()
@@ -1563,6 +1569,25 @@ mod tests {
 
         p.filter = "/wt/hot".to_string();
         assert_eq!(p.selected().unwrap().name, "hotfix");
+    }
+
+    #[test]
+    fn filter_matches_alias_and_original_branch() {
+        let mut aliased = item("billing", "/wt/feature/billing");
+        aliased.worktree.branch = Some("feature/billing-redesign".to_string());
+        let mut p = Picker::new(vec![aliased]);
+
+        // Matches by alias
+        p.filter = "bill".to_string();
+        assert_eq!(p.matches().len(), 1);
+
+        // Matches by original branch name
+        p.filter = "redesign".to_string();
+        assert_eq!(p.matches().len(), 1);
+
+        // Does not match unrelated string
+        p.filter = "auth".to_string();
+        assert_eq!(p.matches().len(), 0);
     }
 
     #[test]
