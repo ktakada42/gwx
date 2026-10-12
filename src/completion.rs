@@ -31,20 +31,49 @@ fn candidates(skip_main: bool) -> Vec<CompletionCandidate> {
     let Some(main) = worktrees.first() else {
         return Vec::new();
     };
-
-    worktrees
+    let aliases = repo.aliases().unwrap_or_default();
+    let branch_to_alias: BTreeMap<&str, &str> = aliases
         .iter()
-        .skip(usize::from(skip_main))
-        .map(|wt| {
-            let name = repo.display_name(wt, main);
-            let hint = if name == MAIN_ALIAS {
-                format!("main worktree — {}", wt.path.display())
+        .map(|(alias, branch)| (branch.as_str(), alias.as_str()))
+        .collect();
+
+    let mut result = Vec::new();
+    for wt in worktrees.iter().skip(usize::from(skip_main)) {
+        if wt.path == main.path {
+            result.push(CompletionCandidate::new(MAIN_ALIAS).help(Some(
+                format!("main worktree — {}", wt.path.display()).into(),
+            )));
+            continue;
+        }
+
+        let branch = wt.branch.as_deref().unwrap_or("");
+        let alias = if !branch.is_empty() {
+            branch_to_alias.get(branch).copied()
+        } else {
+            None
+        };
+
+        if let Some(alias) = alias {
+            let alias_hint = if !branch.is_empty() {
+                format!("alias for {branch} — {}", wt.path.display())
             } else {
                 wt.path.display().to_string()
             };
-            CompletionCandidate::new(name).help(Some(hint.into()))
-        })
-        .collect()
+            result.push(CompletionCandidate::new(alias).help(Some(alias_hint.into())));
+            if !branch.is_empty() {
+                result.push(
+                    CompletionCandidate::new(branch)
+                        .help(Some(wt.path.display().to_string().into())),
+                );
+            }
+        } else {
+            let name = repo.display_name(wt, main);
+            result.push(
+                CompletionCandidate::new(name).help(Some(wt.path.display().to_string().into())),
+            );
+        }
+    }
+    result
 }
 
 /// Branches `gwx add` can turn into a worktree.

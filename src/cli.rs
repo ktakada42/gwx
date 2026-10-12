@@ -49,6 +49,9 @@ pub enum Command {
     /// Print a completion script only
     Completion(ShellArgs),
 
+    /// Manage worktree aliases
+    Alias(AliasArgs),
+
     /// Write man pages into a directory
     ///
     /// Hidden because it exists for whoever packages gwx, not for daily use.
@@ -100,6 +103,10 @@ pub struct AddArgs {
     /// Move the shell into the new worktree, once the hooks have run
     #[arg(long)]
     pub cd: bool,
+
+    /// Assign an alias to the worktree
+    #[arg(short, long, value_name = "ALIAS")]
+    pub alias: Option<String>,
 
     /// Print only the worktree path
     #[arg(short, long)]
@@ -170,6 +177,24 @@ pub struct InitArgs {
 }
 
 #[derive(Debug, clap::Args)]
+pub struct AliasArgs {
+    /// Target worktree, or alias name when setting on the current worktree
+    #[arg(add = ArgValueCandidates::new(completion::worktrees))]
+    pub target: Option<String>,
+
+    /// New alias for the worktree
+    pub alias: Option<String>,
+
+    /// Remove the alias for the worktree (defaults to current worktree)
+    #[arg(short, long)]
+    pub unset: bool,
+
+    /// Overwrite an existing alias if it points to another worktree
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, clap::Args)]
 pub struct ShellArgs {
     /// Shell to generate the script for
     #[arg(value_enum)]
@@ -233,6 +258,42 @@ mod tests {
     fn cd_without_name_targets_the_main_worktree() {
         match Cli::parse_from(["gwx", "cd"]).command {
             Command::Cd(args) => assert!(args.name.is_none()),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn alias_parses_arguments() {
+        match Cli::parse_from(["gwx", "alias"]).command {
+            Command::Alias(args) => {
+                assert!(args.target.is_none());
+                assert!(args.alias.is_none());
+                assert!(!args.unset);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        match Cli::parse_from(["gwx", "alias", "auth"]).command {
+            Command::Alias(args) => {
+                assert_eq!(args.target.as_deref(), Some("auth"));
+                assert!(args.alias.is_none());
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        match Cli::parse_from(["gwx", "alias", "feature/auth", "auth"]).command {
+            Command::Alias(args) => {
+                assert_eq!(args.target.as_deref(), Some("feature/auth"));
+                assert_eq!(args.alias.as_deref(), Some("auth"));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        match Cli::parse_from(["gwx", "alias", "--unset", "auth"]).command {
+            Command::Alias(args) => {
+                assert!(args.unset);
+                assert_eq!(args.target.as_deref(), Some("auth"));
+            }
             other => panic!("unexpected command: {other:?}"),
         }
     }

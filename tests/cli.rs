@@ -1399,3 +1399,144 @@ fn outside_a_repository_it_fails_cleanly() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("not inside a git repository"));
 }
+
+#[test]
+fn add_with_alias_registers_alias_and_cd_resolves_it() {
+    let fx = Fixture::new();
+    let path = fx.gwx_ok(["add", "-q", "feat/billing", "-a", "bill"]);
+
+    // Both alias and full branch resolve to the worktree
+    assert_eq!(fx.gwx_ok(["cd", "bill"]), path);
+    assert_eq!(fx.gwx_ok(["cd", "feat/billing"]), path);
+
+    // List in plain mode shows the alias instead of branch
+    let list = fx.gwx_ok(["list", "--plain"]);
+    assert!(list.contains("bill"), "{list}");
+}
+
+#[test]
+fn alias_subcommand_lists_sets_unsets_and_renames() {
+    let fx = Fixture::new();
+    let wt = fx.gwx_ok(["add", "-q", "feat/auth"]);
+
+    // Initially no aliases
+    let list = fx.gwx_ok(["alias"]);
+    assert_eq!(list, "");
+
+    // Set alias explicitly with target
+    fx.gwx_ok(["alias", "feat/auth", "auth"]);
+    let list = fx.gwx_ok(["alias"]);
+    assert_eq!(list, "auth -> feat/auth");
+
+    // Cd with alias works
+    assert_eq!(fx.gwx_ok(["cd", "auth"]), wt);
+
+    // Overwrite alias with another name
+    fx.gwx_ok(["alias", "feat/auth", "login"]);
+    let list = fx.gwx_ok(["alias"]);
+    assert_eq!(list, "login -> feat/auth");
+
+    // Unset alias
+    fx.gwx_ok(["alias", "--unset", "feat/auth"]);
+    let list = fx.gwx_ok(["alias"]);
+    assert_eq!(list, "");
+}
+
+#[test]
+fn alias_on_current_worktree() {
+    let fx = Fixture::new();
+    let wt = fx.gwx_ok(["add", "-q", "feat/settings"]);
+    let wt_path = PathBuf::from(&wt);
+
+    // Set alias from inside the worktree without specifying target
+    let out = fx.gwx_in(&wt_path, ["alias", "settings"]);
+    assert!(out.status.success());
+
+    let list = fx.gwx_in(&wt_path, ["alias"]);
+    assert_eq!(
+        String::from_utf8_lossy(&list.stdout).trim_end(),
+        "settings -> feat/settings"
+    );
+
+    // Unset alias from inside the worktree
+    let out = fx.gwx_in(&wt_path, ["alias", "--unset"]);
+    assert!(out.status.success());
+
+    let list = fx.gwx_in(&wt_path, ["alias"]);
+    assert_eq!(String::from_utf8_lossy(&list.stdout).trim_end(), "");
+}
+
+#[test]
+fn remove_worktree_cleans_up_alias() {
+    let fx = Fixture::new();
+    fx.gwx_ok(["add", "-q", "feat/temp", "-a", "temp"]);
+
+    let list = fx.gwx_ok(["alias"]);
+    assert_eq!(list, "temp -> feat/temp");
+
+    // Remove by alias
+    fx.gwx_ok(["remove", "--force", "temp"]);
+
+    // Alias was cleaned up
+    let list = fx.gwx_ok(["alias"]);
+    assert_eq!(list, "");
+}
+
+#[test]
+fn alias_validation_and_collision_checks() {
+    let fx = Fixture::new();
+
+    // Invalid alias names
+    let out = fx.gwx(["add", "feat/bad1", "-a", "@"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("is reserved for the main worktree"));
+
+    let out = fx.gwx(["add", "feat/bad2", "--alias=-flag"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("must not start with a dash"));
+
+    let out = fx.gwx(["add", "feat/bad3", "-a", "foo/bar"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("must not contain slashes or spaces"));
+
+    // Collision check
+    fx.gwx_ok(["add", "-q", "feat/one", "-a", "shared"]);
+    let out = fx.gwx(["add", "feat/two", "-a", "shared"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("already assigned to"));
+
+    // Reassigning an alias pointing to another branch fails without --force
+    fx.gwx_ok(["add", "-q", "feat/two"]);
+    let out = fx.gwx(["alias", "feat/two", "shared"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("already assigned to"));
+
+    // Succeeds with --force
+    let out = fx.gwx(["alias", "--force", "feat/two", "shared"]);
+    assert!(out.status.success());
+    let list = fx.gwx_ok(["alias"]);
+    assert_eq!(list, "shared -> feat/two");
+}
+
+#[test]
+fn alias_completion_includes_both_alias_and_branch() {
+    let fx = Fixture::new();
+    fx.gwx_ok(["add", "-q", "feat/billing", "-a", "bill"]);
+
+    let candidates = fx.complete(&["gwx", "cd", ""]);
+    assert!(candidates.contains(&"bill".to_string()), "{candidates:?}");
+    assert!(
+        candidates.contains(&"feat/billing".to_string()),
+        "{candidates:?}"
+    );
+
+    let rem_candidates = fx.complete(&["gwx", "remove", ""]);
+    assert!(
+        rem_candidates.contains(&"bill".to_string()),
+        "{rem_candidates:?}"
+    );
+    assert!(
+        rem_candidates.contains(&"feat/billing".to_string()),
+        "{rem_candidates:?}"
+    );
+}

@@ -32,6 +32,17 @@ pub fn run(args: AddArgs) -> Result<()> {
     if let Some(start) = args.from.as_deref() {
         reject_leading_dash("start point", start)?;
     }
+    if let Some(alias) = &args.alias {
+        git::validate_alias(alias)?;
+        let existing = repo.aliases()?;
+        if let Some(other_branch) = existing.get(alias) {
+            if other_branch != &branch && !args.force {
+                bail!(
+                    "alias `{alias}` is already assigned to `{other_branch}`. Use --force to overwrite."
+                );
+            }
+        }
+    }
 
     let path = match &args.path {
         Some(p) => normalize(&repo.cwd.join(p)),
@@ -93,6 +104,13 @@ pub fn run(args: AddArgs) -> Result<()> {
             Plan::Existing => eprintln!("Checked out existing branch `{branch}`"),
             Plan::Track(remote) => eprintln!("Created branch `{branch}` tracking `{remote}`"),
             Plan::Create(start) => eprintln!("Created branch `{branch}` from `{start}`"),
+        }
+    }
+
+    if let Some(alias) = &args.alias {
+        git::set_alias(&repo.main, alias, &branch).with_context(|| left_behind(&path))?;
+        if !args.quiet {
+            eprintln!("Assigned alias `{alias}` to `{branch}`");
         }
     }
 

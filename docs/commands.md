@@ -3,6 +3,7 @@
 | Command | What it does |
 | --- | --- |
 | `gwx add <branch>` | Create a worktree for `<branch>`, creating the branch if needed |
+| `gwx alias [<target>] [<alias>]` | Manage worktree aliases (`--unset` to remove) |
 | `gwx list` (`ls`) | Pick a worktree interactively; `--plain` or `--paths` for text |
 | `gwx cd [<name>]` | Move into a worktree; with no argument, to the main one |
 | `gwx remove <name>` (`rm`) | Remove a worktree, optionally with its branch |
@@ -15,9 +16,10 @@ Every command also has a man page: `man gwx`, `man gwx-add`, and so on.
 
 ## How a name is resolved
 
-`<name>` is matched against branch names first, then paths below `base_dir`,
-then directory names — so `gwx cd feature/auth` and `gwx cd auth` both work
-when they are unambiguous.
+`<name>` is matched against configured aliases first, then branch names,
+then paths below `base_dir`, then directory names — so when an alias `bill`
+is assigned to `feature/billing-redesign`, `gwx cd bill`,
+`gwx cd feature/billing-redesign`, and `gwx cd billing-redesign` all work.
 
 A bare `gwx cd` goes to the main worktree, the way a bare `cd` takes you home.
 `gwx cd @` says the same thing explicitly. To choose from a list instead, use
@@ -26,7 +28,7 @@ A bare `gwx cd` goes to the main worktree, the way a bare `cd` takes you home.
 ## `gwx add`
 
 ```
-gwx add <branch> [--from <commit-ish>] [--path <path>]
+gwx add <branch> [--alias <alias>] [--from <commit-ish>] [--path <path>]
                  [--no-create] [--no-hooks] [--force] [--cd] [--quiet]
 ```
 
@@ -36,6 +38,10 @@ The branch is resolved in this order:
 2. **Exactly one remote branch matches** → create a local branch tracking it
    (`origin/feature/auth` → `feature/auth`).
 3. **Otherwise** → create the branch from `HEAD`, or from `--from` when given.
+
+Use `--alias <alias>` (or `-a <alias>`) to assign a short alias to the worktree
+at creation time. The alias will be shown in `gwx list` and accepted wherever
+a worktree name is expected (`gwx cd`, `gwx remove`, etc.).
 
 Use `--no-create` to fail instead of creating a branch, `--path` to override
 the generated path, and `--quiet` to print only the resulting path — handy in
@@ -77,6 +83,27 @@ not `--cd` is given.
 > then knows nothing about it. gwx says so rather than doing nothing — start a
 > new shell, or re-run the `eval` from
 > [the README](https://github.com/ktakada42/gwx#shell-integration).
+
+## `gwx alias`
+
+```
+gwx alias [<target>] [<alias>] [--unset] [--force]
+```
+
+Manages worktree aliases. Aliases are stored in local repository configuration
+(`.git/config` under `[gwx "alias"]`), so they stay private to your machine and
+do not affect remotes or teammates.
+
+- `gwx alias` — list all configured aliases (`<alias> -> <branch>`).
+- `gwx alias <alias>` — set or update the alias for the **current** worktree.
+- `gwx alias <target> <alias>` — set or update the alias for `<target>`.
+- `gwx alias --unset [<target>]` (`-u`) — remove the alias (defaults to the current worktree).
+
+If an alias is already assigned to a different worktree, `gwx alias` refuses to
+overwrite it unless `--force` is given.
+
+When a worktree is removed with `gwx remove` or `gwx clean`, its alias is
+automatically removed from `.git/config`.
 
 ## `gwx remove`
 
@@ -169,13 +196,15 @@ repository:
 ```console
 $ gwx cd <TAB>
 @                    -- main worktree — /home/me/repo
+bill                 -- alias for feature/billing-redesign — /home/me/worktrees/feature/billing-redesign
+feature/billing-redesign -- /home/me/worktrees/feature/billing-redesign
 feature/auth         -- /home/me/worktrees/feature/auth
 
 $ gwx add <TAB>
 hotfix/login         -- local branch
 release/2.1          -- origin/release/2.1
 
-$ gwx remove <TAB>   # every worktree except the main one
+$ gwx remove <TAB>   # every worktree except the main one (both aliases and branch names)
 $ gwx add x --from <TAB>   # branches, tags and remote-tracking branches
 ```
 

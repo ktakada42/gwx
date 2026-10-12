@@ -1,4 +1,5 @@
 pub mod add;
+pub mod alias;
 pub mod cd;
 pub mod clean;
 pub mod init;

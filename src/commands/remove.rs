@@ -107,6 +107,10 @@ pub fn remove_worktree(repo: &Repo, worktree: &Worktree, opts: RemoveOptions) ->
     run_git(&repo.main, git_args, opts.quiet)
         .with_context(|| format!("failed to remove {}", worktree.path.display()))?;
 
+    if let Some(branch) = worktree.branch.as_deref() {
+        let _ = git::remove_alias_for_branch(&repo.main, branch);
+    }
+
     if opts.with_branch {
         // Everything past here happens with the worktree already gone, so a
         // failure has to say so: otherwise `--with-branch` looks like it did

@@ -504,6 +504,73 @@ fn parse_tracking(upstream: &str, track: &str) -> Tracking {
     }
 }
 
+/// Returns all gwx aliases configured in the repository, mapping alias to branch name.
+pub fn aliases(dir: &Path) -> Result<BTreeMap<String, String>> {
+    let out = match output(dir, ["config", "--get-regexp", r"^gwx\.alias\."]) {
+        Ok(out) => out,
+        Err(_) => return Ok(BTreeMap::new()),
+    };
+    let mut map = BTreeMap::new();
+    for line in out.lines() {
+        if let Some((key, val)) = line.split_once(' ') {
+            if let Some(alias) = key.strip_prefix("gwx.alias.") {
+                map.insert(alias.to_string(), val.to_string());
+            }
+        }
+    }
+    Ok(map)
+}
+
+/// Sets a gwx alias for a branch.
+pub fn set_alias(dir: &Path, alias: &str, branch: &str) -> Result<()> {
+    run(dir, ["config", &format!("gwx.alias.{alias}"), branch])
+}
+
+/// Removes a gwx alias.
+pub fn remove_alias(dir: &Path, alias: &str) -> Result<()> {
+    // Exit code 5 from `git config --unset` means the key was not found.
+    // That is fine when our goal is to ensure it is not there.
+    let _ = run(dir, ["config", "--unset", &format!("gwx.alias.{alias}")]);
+    Ok(())
+}
+
+/// Removes any alias pointing to `branch`.
+pub fn remove_alias_for_branch(dir: &Path, branch: &str) -> Result<()> {
+    let all = aliases(dir)?;
+    for (alias, target_branch) in all {
+        if target_branch == branch {
+            remove_alias(dir, &alias)?;
+        }
+    }
+    Ok(())
+}
+
+/// Validates that `alias` is a suitable name for a worktree alias.
+pub fn validate_alias(alias: &str) -> Result<()> {
+    if alias.is_empty() {
+        bail!("alias must not be empty");
+    }
+    if alias == crate::repo::MAIN_ALIAS {
+        bail!(
+            "`{}` is reserved for the main worktree",
+            crate::repo::MAIN_ALIAS
+        );
+    }
+    if alias.starts_with('-') {
+        bail!("alias must not start with a dash");
+    }
+    if alias.contains('/') || alias.contains('\\') || alias.contains(' ') {
+        bail!("alias must not contain slashes or spaces");
+    }
+    if !alias
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        bail!("alias must only contain letters, numbers, hyphens, and underscores");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,5 +614,17 @@ prunable gitdir file points to non-existent location
             Tracking::Pushed
         );
         assert_eq!(parse_tracking("origin/feat", "[gone]"), Tracking::Gone);
+    }
+
+    #[test]
+    fn validates_worktree_alias_names() {
+        assert!(validate_alias("auth").is_ok());
+        assert!(validate_alias("proj-123_test").is_ok());
+
+        assert!(validate_alias("").is_err());
+        assert!(validate_alias("@").is_err());
+        assert!(validate_alias("-auth").is_err());
+        assert!(validate_alias("feat/auth").is_err());
+        assert!(validate_alias("feat auth").is_err());
     }
 }
