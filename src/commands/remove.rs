@@ -120,7 +120,8 @@ pub fn remove_worktree(repo: &Repo, worktree: &Worktree, opts: RemoveOptions) ->
         let Some(branch) = worktree.branch.as_deref() else {
             bail!("{}, but it had no branch to remove", removed());
         };
-        let merged = git::MergeState::read(&repo.main)?.of(branch);
+        let merges = git::MergeState::read(&repo.main, repo.config.use_gh_merge_base())?;
+        let (merged, target) = merges.of_with_target(branch);
         if !opts.force && merged == Merged::No {
             bail!(
                 "{}, but branch `{branch}` is not merged into HEAD of the main worktree and was kept; pass --force to delete it too",
@@ -131,8 +132,11 @@ pub fn remove_worktree(repo: &Repo, worktree: &Worktree, opts: RemoveOptions) ->
         // merge, so it would refuse the branch gwx has just decided is safe.
         // Reaching for `-D` means gwx answers for the deletion, which is why
         // the check behind `Merged::Changes` is the one that never says yes to
-        // work that was merged and then reverted.
-        let flag = if (merged == Merged::Commits || merged == Merged::New) && !opts.force {
+        // work that was merged and then reverted. A branch merged only into
+        // its `gh-merge-base` is refused by `-d` too, which knows nothing of
+        // targets: it asks about `HEAD` and the upstream.
+        let by_ancestry = merged == Merged::Commits || merged == Merged::New;
+        let flag = if by_ancestry && target.is_none() && !opts.force {
             "-d"
         } else {
             "-D"

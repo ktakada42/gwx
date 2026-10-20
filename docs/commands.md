@@ -114,7 +114,9 @@ gwx remove <name> [--with-branch] [--force] [--no-hooks]
 Refuses to delete the main worktree, the worktree you are standing in, or one
 with uncommitted changes. `--with-branch` also deletes the branch, but only
 when its work is in `HEAD` of the main worktree — either merged there, or
-[squash or rebase merged](clean.md#a-squash-merge-counts-as-merged);
+[squash or rebase merged](clean.md#a-squash-merge-counts-as-merged) — or, with
+[`use_gh_merge_base`](configuration.md#use_gh_merge_base), in the branch its
+`gh-merge-base` names;
 `--force` overrides both checks. `--no-hooks` skips the `pre_remove` and `post_remove` hooks, which is
 the way out when a hook itself is what stands between you and a stale
 worktree.

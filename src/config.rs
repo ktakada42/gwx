@@ -43,6 +43,13 @@ pub struct Defaults {
     /// should inherit whatever the user prefers.
     #[serde(default)]
     pub base_dir: Option<String>,
+    /// Also count a branch as merged once its work is on the branch named by
+    /// `branch.<name>.gh-merge-base`, not only on `HEAD` of the main worktree.
+    ///
+    /// `None` for the same reason as `base_dir`: so a repository that says
+    /// nothing inherits the user's choice.
+    #[serde(default)]
+    pub use_gh_merge_base: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -200,6 +207,10 @@ impl Config {
             version: repo.version.or(user.version),
             defaults: Defaults {
                 base_dir: repo.defaults.base_dir.or(user.defaults.base_dir),
+                use_gh_merge_base: repo
+                    .defaults
+                    .use_gh_merge_base
+                    .or(user.defaults.use_gh_merge_base),
             },
             hooks: Hooks {
                 pre_create: chain(user.hooks.pre_create, repo.hooks.pre_create),
@@ -208,6 +219,11 @@ impl Config {
                 post_remove: chain(repo.hooks.post_remove, user.hooks.post_remove),
             },
         }
+    }
+
+    /// Whether a branch's `gh-merge-base` counts as somewhere it can be merged.
+    pub fn use_gh_merge_base(&self) -> bool {
+        self.defaults.use_gh_merge_base.unwrap_or(false)
     }
 
     /// Absolute base directory for new worktrees.
@@ -318,6 +334,11 @@ version = "1"
 # `~` and `{repo}` are expanded: "~/worktrees/{repo}" is the shape that works
 # in every repository, which is what the user-wide config wants.
 base_dir = "../worktrees"
+
+# Count a branch as merged, for `remove --with-branch` and `clean`, once its
+# work is on the branch `git config branch.<name>.gh-merge-base` names -- the
+# default base of `gh pr create` -- and not only on HEAD of the main worktree.
+# use_gh_merge_base = true
 
 # Hooks run before the worktree is created (command hooks only, run in the
 # main worktree).
@@ -458,6 +479,18 @@ mod tests {
             merged.base_dir(Path::new("/repo")).unwrap(),
             PathBuf::from("/elsewhere")
         );
+    }
+
+    #[test]
+    fn use_gh_merge_base_is_inherited_unless_the_repository_sets_it() {
+        let user = || Config::parse("[defaults]\nuse_gh_merge_base = true").unwrap();
+
+        let silent = Config::merge(user(), Config::default());
+        assert_eq!(silent.defaults.use_gh_merge_base, Some(true));
+
+        let repo = Config::parse("[defaults]\nuse_gh_merge_base = false").unwrap();
+        let merged = Config::merge(user(), repo);
+        assert_eq!(merged.defaults.use_gh_merge_base, Some(false));
     }
 
     #[test]

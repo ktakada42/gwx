@@ -1206,6 +1206,102 @@ fn remove_keeps_a_branch_whose_work_was_reverted() {
     assert!(git_out(&fx.repo, ["branch", "--list", "feature/reverted"]).contains("reverted"));
 }
 
+/// `feature/child` with work of its own, merged into `feature/base` — the
+/// branch its `gh-merge-base` names — and not into `main`.
+fn merged_into_its_gh_merge_base(fx: &Fixture, squash: bool) -> PathBuf {
+    let base = PathBuf::from(fx.gwx_ok(["add", "feature/base"]));
+    let child = PathBuf::from(fx.gwx_ok(["add", "feature/child"]));
+    commit(&child, "child.txt", "one\n", "child work");
+    if squash {
+        git(&base, ["merge", "--squash", "feature/child"]);
+        git(&base, ["commit", "-m", "feature/child (#2)"]);
+    } else {
+        git(
+            &base,
+            [
+                "merge",
+                "--no-ff",
+                "-m",
+                "Merge feature/child",
+                "feature/child",
+            ],
+        );
+    }
+    git(
+        &fx.repo,
+        [
+            "config",
+            "branch.feature/child.gh-merge-base",
+            "feature/base",
+        ],
+    );
+    child
+}
+
+#[test]
+fn remove_ignores_gh_merge_base_unless_configured() {
+    let fx = Fixture::new();
+    merged_into_its_gh_merge_base(&fx, false);
+
+    let out = fx.gwx(["remove", "feature/child", "--with-branch"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not merged"));
+    assert!(git_out(&fx.repo, ["branch", "--list", "feature/child"]).contains("child"));
+}
+
+#[test]
+fn remove_deletes_a_branch_merged_into_its_gh_merge_base() {
+    for squash in [false, true] {
+        let fx = Fixture::new();
+        fx.write_config("[defaults]\nuse_gh_merge_base = true\n");
+        let path = merged_into_its_gh_merge_base(&fx, squash);
+
+        // `git branch -d` refuses both: it asks about HEAD and the upstream,
+        // and the work is on neither.
+        let out = fx.gwx(["remove", "feature/child", "--with-branch"]);
+        assert!(
+            out.status.success(),
+            "squash={squash}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(!path.exists());
+        assert!(!git_out(&fx.repo, ["branch", "--list", "feature/child"]).contains("child"));
+    }
+}
+
+#[test]
+fn remove_keeps_a_branch_whose_gh_merge_base_is_gone() {
+    let fx = Fixture::new();
+    fx.write_config("[defaults]\nuse_gh_merge_base = true\n");
+    merged_into_its_gh_merge_base(&fx, false);
+    fx.gwx_ok(["remove", "feature/base"]);
+    git(&fx.repo, ["branch", "-D", "feature/base"]);
+
+    let out = fx.gwx(["remove", "feature/child", "--with-branch"]);
+    assert!(!out.status.success());
+    assert!(git_out(&fx.repo, ["branch", "--list", "feature/child"]).contains("child"));
+}
+
+#[test]
+fn clean_names_the_gh_merge_base_a_branch_was_merged_into() {
+    let fx = Fixture::new();
+    fx.write_config("[defaults]\nuse_gh_merge_base = true\n");
+    merged_into_its_gh_merge_base(&fx, false);
+
+    let out = fx.gwx(["clean"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = String::from_utf8_lossy(&out.stdout);
+    let row = table
+        .lines()
+        .find(|l| l.starts_with("feature/child"))
+        .unwrap_or_else(|| panic!("no row for feature/child in:\n{table}"));
+    assert!(row.contains("merged into feature/base"), "{table}");
+}
+
 #[test]
 fn init_writes_a_config_template() {
     let fx = Fixture::new();

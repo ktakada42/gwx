@@ -141,7 +141,8 @@ pub struct RemoveArgs {
     #[arg(add = ArgValueCandidates::new(completion::removable_worktrees))]
     pub name: String,
 
-    /// Remove the branch as well when it is merged into the main worktree
+    /// Remove the branch as well when it is merged into the main worktree (or,
+    /// with `use_gh_merge_base`, into its gh-merge-base)
     #[arg(long)]
     pub with_branch: bool,
 

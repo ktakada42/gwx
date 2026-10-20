@@ -40,7 +40,7 @@ is *finished*, which is why only `done` is ticked for you.
 
 | State | Meaning | Removing the worktree | Also removing the branch |
 | --- | --- | --- | --- |
-| `done` | The work is in the main worktree's HEAD, nothing uncommitted | Loses nothing | Loses nothing; the work is in HEAD |
+| `done` | The work is in the main worktree's HEAD (or, with [`use_gh_merge_base`](configuration.md#use_gh_merge_base), its target branch), nothing uncommitted | Loses nothing | Loses nothing; the work is in HEAD |
 | `pushed` | Not merged, but every commit is on its upstream | Loses nothing | Loses nothing; the commits are on the remote |
 | `local` | Commits that are on no remote, or no upstream at all | Loses nothing; the branch keeps the commits | **Loses those commits** |
 | `dirty` | Uncommitted changes | **Loses them** | Same |

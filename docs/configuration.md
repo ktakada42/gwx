@@ -14,6 +14,8 @@ version = "1"
 [defaults]
 # Where worktrees are created, relative to the main worktree.
 base_dir = "../worktrees"
+# Count a branch as merged once its work is on its gh-merge-base too.
+use_gh_merge_base = false
 
 # Runs before the worktree exists, in the main worktree. Commands only.
 [[hooks.pre_create]]
@@ -153,6 +155,35 @@ That puts this repository's `feature/auth` at `~/worktrees/gwx/feature/auth`,
 and the next repository's somewhere it cannot collide with. gwx never runs the
 value through a shell, so anything else in braces, and `~user` for somebody
 else's home, is an error rather than a directory with a surprising name.
+
+## `use_gh_merge_base`
+
+`remove --with-branch` and `clean` count a branch as merged when its work is in
+`HEAD` of the main worktree. A branch cut from a feature branch and merged back
+into it is not, until that feature branch reaches `main` — so gwx keeps it,
+although its work is no less safe than if it had gone straight to `main`.
+
+```toml
+[defaults]
+use_gh_merge_base = true
+```
+
+With this, a branch that `HEAD` turns down is asked the same question again
+against the local branch named by `git config branch.<name>.gh-merge-base`.
+That is the key `gh pr create` takes its default `--base` from, so a branch
+set up for `gh` needs nothing more. Anything else can set it the same way:
+
+```bash
+git config branch.feature/child.gh-merge-base feature/parent
+```
+
+The test is the one `HEAD` gets — merged, squash or rebase merged, and not
+merged and then reverted — and `clean` names the branch it found the work on:
+`merged into feature/parent, nothing uncommitted`. `HEAD` is still asked first,
+so turning this on only ever adds branches to the merged ones. A target with no
+local branch, never fetched or already deleted, leaves the `HEAD` answer
+standing on its own. Off by default; like `base_dir`, a repository that says
+nothing inherits the user-wide setting.
 
 ## Two files
 

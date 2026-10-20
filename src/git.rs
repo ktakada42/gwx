@@ -299,7 +299,8 @@ pub fn is_dirty(path: &Path) -> Result<bool> {
     Ok(!output(path, ["status", "--porcelain"])?.is_empty())
 }
 
-/// What `HEAD` of the main worktree already holds of a branch.
+/// What `HEAD` of the main worktree — or the branch's own target, with
+/// `use_gh_merge_base` — already holds of a branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Merged {
     /// The branch is at `HEAD` with no commits of its own and has never been pushed.
@@ -330,10 +331,13 @@ pub struct MergeState {
     head_commit: Option<String>,
     tracking: BTreeMap<String, Tracking>,
     branch_heads: BTreeMap<String, String>,
+    /// `branch.<name>.gh-merge-base` of every branch that has one, when
+    /// `use_gh_merge_base` asks for it; empty otherwise.
+    targets: BTreeMap<String, String>,
 }
 
 impl MergeState {
-    pub fn read(main: &Path) -> Result<Self> {
+    pub fn read(main: &Path, use_gh_merge_base: bool) -> Result<Self> {
         let (tracking, branch_heads) = branch_refs(main).unwrap_or_default();
         Ok(Self {
             main: main.to_path_buf(),
@@ -342,32 +346,100 @@ impl MergeState {
             head_commit: output(main, ["rev-parse", "HEAD"]).ok(),
             tracking,
             branch_heads,
+            targets: if use_gh_merge_base {
+                gh_merge_bases(main).unwrap_or_default()
+            } else {
+                BTreeMap::new()
+            },
         })
     }
 
     pub fn of(&self, branch: &str) -> Merged {
+        self.of_with_target(branch).0
+    }
+
+    /// `of`, and where the answer came from: `None` for `HEAD` of the main
+    /// worktree, or the `gh-merge-base` branch that holds the work.
+    ///
+    /// `HEAD` is asked first and the target only when `HEAD` says no, so the
+    /// setting can only ever add branches to the merged ones, never take one
+    /// away. A branch merged into a feature branch is as safe to delete as one
+    /// merged into `main`: its work lives on either way.
+    pub fn of_with_target(&self, branch: &str) -> (Merged, Option<&str>) {
+        let on_head = self.on_head(branch);
+        if on_head != Merged::No {
+            return (on_head, None);
+        }
+        match self.targets.get(branch) {
+            Some(target) => match self.on_target(branch, target) {
+                Merged::No => (Merged::No, None),
+                merged => (merged, Some(target.as_str())),
+            },
+            None => (Merged::No, None),
+        }
+    }
+
+    fn on_head(&self, branch: &str) -> Merged {
         if self.ancestors.iter().any(|b| b == branch) {
-            let is_untracked = self
-                .tracking
-                .get(branch)
-                .is_none_or(|t| *t == Tracking::Untracked);
             let is_at_head = self
                 .branch_heads
                 .get(branch)
                 .zip(self.head_commit.as_ref())
                 .is_some_and(|(b, h)| b == h);
-            if is_untracked && is_at_head {
+            if self.is_untracked(branch) && is_at_head {
                 return Merged::New;
             }
             return Merged::Commits;
         }
-        if self.merging_would_change_nothing(branch) {
+        if let Some(head_tree) = &self.head_tree {
+            if self.merging_would_change_nothing("HEAD", head_tree, branch) {
+                return Merged::Changes;
+            }
+        }
+        Merged::No
+    }
+
+    /// The same three answers as `on_head`, against the local branch `target`.
+    ///
+    /// These are calls per branch where `on_head` shares one list, but only
+    /// the branches that name a target and are not on `HEAD` get this far. A
+    /// target with no local branch — never fetched, or deleted after the merge
+    /// — answers `No`, which leaves the branch to the `HEAD` answer alone.
+    fn on_target(&self, branch: &str, target: &str) -> Merged {
+        let target = format!("refs/heads/{target}");
+        let (Ok(commit), Ok(tree)) = (
+            output(
+                &self.main,
+                ["rev-parse", "--verify", &format!("{target}^{{commit}}")],
+            ),
+            output(
+                &self.main,
+                ["rev-parse", "--verify", &format!("{target}^{{tree}}")],
+            ),
+        ) else {
+            return Merged::No;
+        };
+        if check(&self.main, ["merge-base", "--is-ancestor", branch, &target]) {
+            let is_at_target = self.branch_heads.get(branch).is_some_and(|b| *b == commit);
+            if self.is_untracked(branch) && is_at_target {
+                return Merged::New;
+            }
+            return Merged::Commits;
+        }
+        if self.merging_would_change_nothing(&target, &tree, branch) {
             return Merged::Changes;
         }
         Merged::No
     }
 
-    /// `true` when merging `branch` into `HEAD` would produce `HEAD`'s tree.
+    fn is_untracked(&self, branch: &str) -> bool {
+        self.tracking
+            .get(branch)
+            .is_none_or(|t| *t == Tracking::Untracked)
+    }
+
+    /// `true` when merging `branch` into `onto` would produce `onto`'s tree,
+    /// `onto_tree`.
     ///
     /// This is the question `git branch --merged` cannot answer. It asks about
     /// ancestry, and a squash merge writes the branch's cumulative diff as one
@@ -390,16 +462,13 @@ impl MergeState {
     /// answer is `true` that tree is `HEAD`'s own and already there, so the
     /// common case writes nothing; an unmerged branch leaves a tree that `git
     /// gc` prunes with every other unreachable object.
-    fn merging_would_change_nothing(&self, branch: &str) -> bool {
-        let Some(head_tree) = &self.head_tree else {
-            return false;
-        };
-        let merges_clean = output(&self.main, ["merge-tree", "--write-tree", "HEAD", branch])
-            .is_ok_and(|tree| tree == *head_tree);
-        merges_clean && self.introduces_something(branch)
+    fn merging_would_change_nothing(&self, onto: &str, onto_tree: &str, branch: &str) -> bool {
+        let merges_clean = output(&self.main, ["merge-tree", "--write-tree", onto, branch])
+            .is_ok_and(|tree| tree == onto_tree);
+        merges_clean && self.introduces_something(onto, branch)
     }
 
-    /// `true` if `branch` changed anything at all since it left `HEAD`.
+    /// `true` if `branch` changed anything at all since it left `onto`.
     ///
     /// A branch that changed nothing merges into anything without effect, so
     /// the tree comparison above says `true` about it while proving nothing:
@@ -407,15 +476,38 @@ impl MergeState {
     /// its commits are real, and whether they are anywhere else is a question
     /// its upstream answers — so it keeps the state its tracking gives it.
     ///
-    /// `HEAD...branch` is the diff from the merge base to the branch, which is
+    /// `onto...branch` is the diff from the merge base to the branch, which is
     /// exactly the work the branch claims. `--quiet` reports it as an exit
     /// code: 0 for no difference.
-    fn introduces_something(&self, branch: &str) -> bool {
+    fn introduces_something(&self, onto: &str, branch: &str) -> bool {
         !check(
             &self.main,
-            ["diff", "--quiet", &format!("HEAD...{branch}"), "--"],
+            ["diff", "--quiet", &format!("{onto}...{branch}"), "--"],
         )
     }
+}
+
+/// `branch.<name>.gh-merge-base` of every branch that sets it.
+///
+/// One call for the repository. git lowercases the section and key it prints
+/// but not the subsection, so the branch name comes back as it was written.
+/// No branch with the key at all exits 1, which reads as an empty map.
+fn gh_merge_bases(main: &Path) -> Result<BTreeMap<String, String>> {
+    let out = output(
+        main,
+        ["config", "--get-regexp", r"^branch\..*\.gh-merge-base$"],
+    )?;
+    Ok(out
+        .lines()
+        .filter_map(|line| {
+            let (key, target) = line.split_once(' ')?;
+            let branch = key
+                .strip_prefix("branch.")?
+                .strip_suffix(".gh-merge-base")?;
+            Some((branch.to_string(), target.trim().to_string()))
+        })
+        .filter(|(_, target)| !target.is_empty())
+        .collect())
 }
 
 /// Every branch already contained in `HEAD` of the main worktree.

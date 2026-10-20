@@ -423,7 +423,7 @@ fn pending(repo: &Repo, picker: &Picker) -> Option<Pending> {
     let merged = worktree
         .branch
         .as_deref()
-        .zip(git::MergeState::read(&repo.main).ok())
+        .zip(git::MergeState::read(&repo.main, repo.config.use_gh_merge_base()).ok())
         .is_some_and(|(b, merges)| merges.of(b) != git::Merged::No);
 
     Some(Pending::Ask(Subject {
@@ -671,6 +671,7 @@ impl StatusFeed {
     fn spawn(repo: &Repo, items: &[Item]) -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
         let main = repo.main.clone();
+        let use_gh_merge_base = repo.config.use_gh_merge_base();
         let subjects: Vec<StatusJob> = items
             .iter()
             .enumerate()
@@ -684,7 +685,7 @@ impl StatusFeed {
             .collect();
 
         std::thread::spawn(move || {
-            let merges = git::MergeState::read(&main).ok();
+            let merges = git::MergeState::read(&main, use_gh_merge_base).ok();
             let mut workers = Vec::new();
             for subject in subjects {
                 let merges = merges.clone();
@@ -2276,7 +2277,7 @@ mod tests {
     #[test]
     fn the_status_column_reports_what_removing_would_cost() {
         let fixture = Fixture::new(&["feature/auth"]);
-        let merges = git::MergeState::read(&fixture.main).unwrap();
+        let merges = git::MergeState::read(&fixture.main, false).unwrap();
 
         // A branch off main with no commits of its own is new.
         assert_eq!(
